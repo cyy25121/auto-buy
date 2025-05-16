@@ -14,6 +14,7 @@ class BaseBuyer(ABC):
         self.page = page
         self.timing_stats = {}  
         self._load_credentials()
+        self.login()
 
     @abstractmethod
     def _load_credentials(self):

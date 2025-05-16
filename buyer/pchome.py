@@ -10,6 +10,12 @@ import time
 logger = logging.getLogger(__name__)
 
 class PChomeBuyer(BaseBuyer):
+    # 將 login_url 定義為類別屬性
+    login_url = "https://ecvip.pchome.com.tw/login/v3/login.htm"
+    
+    def __init__(self, url: str, page: Page):
+        super().__init__(url, page)
+
     def _load_credentials(self):
         """載入登入憑證"""
         env_path = Path('.env')
@@ -23,9 +29,15 @@ class PChomeBuyer(BaseBuyer):
         # 讀取環境變數
         self.username = os.getenv('PCHOME_USERNAME')
         self.password = os.getenv('PCHOME_PASSWORD')
+        self.payment = dict(
+            CVC = os.getenv('PAYMENT_INFO_CVC'),
+        )
 
         if not self.username or not self.password:
             raise ValueError("請在 .env 檔案中設定 PCHOME_USERNAME 和 PCHOME_PASSWORD")
+        
+        if not self.payment['CVC']:
+            raise ValueError("請在 .env 檔案中設定 PAYMENT_INFO_CVC")
 
         logger.info(f"已載入 PChome 帳號資訊")
 
@@ -34,10 +46,9 @@ class PChomeBuyer(BaseBuyer):
         logger.info("開始 PChome 登入流程")
         
         try:
-            # 等待登入按鈕出現
-            login_button = self.page.get_by_role("button", name="登入")
-            login_button.wait_for(state="visible")
-            login_button.click()
+            # 導航到登入頁面
+            self.page.goto(self.login_url)
+            logger.info("已導航到登入頁面")
             
             # 輸入帳號密碼
             account_input = self.page.get_by_placeholder("請輸入手機號碼 或 Email")
@@ -161,40 +172,50 @@ class PChomeBuyer(BaseBuyer):
     def purchase(self):
         """執行購買流程"""
         logger.info("開始購買流程")
+        self.page.goto(self.url)
         
         try:
-            # 檢查是否有庫存
-            product_info = self.check_product()
-            if not product_info["has_stock"]:
-                raise Exception("商品目前無庫存")
-            
             # 點擊立即購買按鈕
-            buy_button = self.page.wait_for_selector("button[data-regression='product_button_buyNow']", timeout=5000)
+            buy_button = self.page.locator("#ProdBriefing button").filter(has_text="立即購買")
             if not buy_button:
                 raise Exception("找不到立即購買按鈕")
             
             buy_button.click()
             logger.info("已點擊立即購買按鈕")
+
+            # 點擊結帳按鈕
+            checkout_button = self.page.locator("button[data-regression='step1-checkout-btn']")
+            if not checkout_button:
+                raise Exception("找不到結帳按鈕")
             
-            # 等待購物車頁面載入
-            self.page.wait_for_selector('.cart-page', timeout=10000)
-            logger.info("購物車頁面已載入")
+            checkout_button.click()
+            logger.info("已點擊結帳按鈕")
+
+            # 點擊訂單不受24小時到貨時間限制確認按鈕
+            try:
+                # 嘗試點擊結帳按鈕,但不一定每個商品都會出現
+                checkout_confirm = self.page.get_by_role("button", name="確定")
+                if checkout_confirm.is_visible():
+                    checkout_confirm.click()
+                    logger.info("已點擊結帳確認按鈕")
+            except Exception as e:
+                logger.info("沒有出現結帳確認按鈕,繼續下一步")
             
-            # 選擇付款方式（預設選擇信用卡付款）
-            self.page.click('label:has-text("信用卡")')
-            logger.info("已選擇信用卡付款")
+            # 等待訂單表單載入
+            self.page.wait_for_selector("input[type='text']", timeout=5000)
             
-            # 選擇配送方式（預設選擇宅配）
-            self.page.click('label:has-text("宅配")')
-            logger.info("已選擇宅配")
+            # 填寫信用卡 CVC
+            self.page.get_by_placeholder("CVC").fill(self.payment['CVC'])
+
+            logger.info("表單填寫完成")
+
+            # 確認付款
+            # self.page.get_by_role("button", name="確認付款").click()
+            # logger.info("已點擊確認付款按鈕")
             
-            # 確認訂單
-            self.page.click('button:has-text("確認結帳")')
-            logger.info("已點擊確認結帳")
-            
-            # 等待訂單確認
-            self.page.wait_for_selector('.order-success', timeout=30000)
             logger.info("PChome 購買完成")
+            self.page.screenshot(path=f"purchase_success_{int(time.time())}.png")
+            self.page.pause()
             
         except Exception as e:
             logger.error(f"PChome 購買過程發生錯誤: {str(e)}")

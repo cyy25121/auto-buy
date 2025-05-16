@@ -58,14 +58,14 @@ def run_buyer(url: str, scheduled_time: Optional[str] = None, headless: bool = F
                 with TimingContext(f"等待預定時間 {scheduled_time}"):
                     buyer.wait_for_scheduled_time(scheduled_time)
             
-            # 訪問商品頁面
-            with TimingContext("載入商品頁面"):
-                page.goto(url)
-            
             # 檢查商品
-            with TimingContext("檢查商品資訊"):
-                product_info = buyer.check_product()
-                logger.info(f"商品資訊: {product_info}")
+            # with TimingContext("檢查商品資訊"):
+            #     product_info = buyer.check_product()
+            #     logger.info(f"商品資訊: {product_info}")
+
+            # 購買商品
+            with TimingContext("購買商品"):
+                buyer.purchase()
             
             total_time = time.time() - total_start_time
             logger.info(f"購買流程完成，總耗時: {total_time:.2f} 秒")
